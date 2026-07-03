@@ -18,7 +18,7 @@ const Home_page = () => {
   const loadConversation = async (chatUser) => {
     try {
       const res = await axios.get(
-        `https://chat-app-production-03e7.up.railway.app/api/Previous_conversation/${user.id}/${chatUser.clerkId}`
+        `https://brilliant-mindfulness-production-4965.up.railway.app/api/Previous_conversation/${user.id}/${chatUser.clerkId}`
       );
 
       setMessages(res.data);

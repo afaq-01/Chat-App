@@ -26,7 +26,7 @@ function App() {
     try {
 
       if (user && isLoaded) {
-        const res = await axios.post("https://chat-app-production-03e7.up.railway.app/api/user", {
+        const res = await axios.post("https://brilliant-mindfulness-production-4965.up.railway.app/api/user", {
           clerkId: user.id,
           name: user.fullName,
           email: user.primaryEmailAddress.emailAddress,
@@ -43,7 +43,7 @@ function App() {
   /*-----Getting all users which are saved in database----*/
   const Getting_All_Users = async () => {
     try {
-      const res = await axios.get("https://chat-app-production-03e7.up.railway.app/api/All_users")
+      const res = await axios.get("https://brilliant-mindfulness-production-4965.up.railway.app/api/All_users")
       setUsers(res.data)
 
     } catch (error) {
@@ -77,7 +77,7 @@ function App() {
   useEffect(() => {
     if (!isLoaded || !user) return;
 
-    const newSocket = io("https://chat-app-production-03e7.up.railway.app", {
+    const newSocket = io("https://brilliant-mindfulness-production-4965.up.railway.app", {
       auth: {
         clerkId: user.id,
       },
