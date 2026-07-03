@@ -62,19 +62,6 @@ export const Getting_All_User = async (req, res) => {
 };
 
 
-const allUsers = await User_Models.find();
-try {
-    return res.status(200).json(allUsers);
-} catch (error) {
-    console.error("Error fetching users:", error);
-    return res.status(500).json({
-        message: "Internal Server Error",
-        error: error.message,
-    });
-}
-
-
-
 /*-----------getting All messages----------*/
 export const Get_Conversation_Messages = async (req, res) => {
     try {
