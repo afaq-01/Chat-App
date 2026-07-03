@@ -6,7 +6,7 @@ export const Adding_New_User = async (req, res) => {
     try {
         const { clerkId, name, email, image } = req.body;
 
-        console.log(clerkId)
+        console.log({userName:name})
         console.log(name)
 
 
