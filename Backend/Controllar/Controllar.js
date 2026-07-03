@@ -39,41 +39,41 @@ export const Adding_New_User = async (req, res) => {
     }
 };
 
-//mmmmm
 
 /*-------Controllar for getting all user from database-----*/
 export const Getting_All_User = async (req, res) => {
-  try {
-<<<<<<< HEAD
-    console.log("All users endpoint called");
+    try {
 
-    const allUsers = await User_Models.find();
+        console.log("All users endpoint called");
 
-    console.log("Users fetched:", allUsers.length);
+        const allUsers = await User_Models.find();
 
-    return res.status(200).json(allUsers);
-  } catch (error) {
-    console.error("Error in Getting_All_User:", error);
+        console.log("Users fetched:", allUsers.length);
 
-    return res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
+        return res.status(200).json(allUsers);
+    } catch (error) {
+        console.error("Error in Getting_All_User:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: error.message,
+        });
+    }
 };
 
-=======
-    const allUsers = await User_Models.find();
+
+const allUsers = await User_Models.find();
+try {
     return res.status(200).json(allUsers);
-  } catch (error) {
+} catch (error) {
     console.error("Error fetching users:", error);
     return res.status(500).json({
-      message: "Internal Server Error",
-      error: error.message,
+        message: "Internal Server Error",
+        error: error.message,
     });
-  }
-};
->>>>>>> eac2750 (Fix previous chat loading issue)
+}
+
+
 
 /*-----------getting All messages----------*/
 export const Get_Conversation_Messages = async (req, res) => {
