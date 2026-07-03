@@ -1,4 +1,4 @@
-import { useContext, useState, useEffect } from "react";
+import { useContext, useState, useEffect, useRef } from "react";
 import Context from "../Components/Context";
 import { useUser, useClerk } from "@clerk/clerk-react";
 import { CgProfile } from "react-icons/cg";
@@ -14,6 +14,7 @@ const Home_page = () => {
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState([]);
   const [showProfile, setShowProfile] = useState(false);
+  const messagesEndRef = useRef(null);
 
   const loadConversation = async (chatUser) => {
     try {
@@ -64,9 +65,15 @@ const Home_page = () => {
     setMessage("");
   };
 
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({
+      behavior: "smooth",
+    });
+  }, [messages]);
+
   return (
-    <div className="min-h-[100dvh] bg-gradient-to-br from-[#0f172a] via-[#111827] to-[#1e293b] text-white p-5">
-      <div className="w-full max-w-7xl mx-auto h-[100dvh] sm:h-[95vh] overflow-hidden sm:rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl shadow-2xl flex ">
+    <div className="min-h-[100vh] bg-gradient-to-br from-[#0f172a] via-[#111827] to-[#1e293b] text-white  md:p-10">
+      <div className="w-full max-w-7xl mx-auto h-[90dvh] sm:h-[100vh] md:h-[90vh] overflow-hidden md:rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl shadow-2xl flex ">
 
         {/* ---------------- SIDEBAR ---------------- */}
         <div
@@ -85,6 +92,7 @@ const Home_page = () => {
           
           `}
         >
+
           {/* Logo */}
           <div className="h-16 sm:h-20  flex items-center justify-between border-b border-white/10 p-8">
             <img
@@ -205,51 +213,54 @@ const Home_page = () => {
           </div>
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-2 sm:p-4 space-y-3 min-h-0">
+          <div className="flex-1 overflow-y-auto p-2 sm:p-4 space-y-3 min-h-0 hide-scrollbar">
             {selectedChat ? (
-              messages.map((msg, index) => {
-                const isMine = msg.senderId === user?.id;
+              <>
+                {messages.map((msg, index) => {
+                  const isMine = msg.senderId === user?.id;
 
-                return (
-                  <div
-                    key={index}
-                    className={`flex ${isMine ? "justify-end" : "justify-start"
-                      }`}
-                  >
+                  return (
                     <div
-                      className={`
-                        relative
-                        max-w-[90%]
-                        sm:max-w-[80%]
-                        lg:max-w-[70%]
-                        px-3
-                        py-2
-                        rounded-lg
-                        shadow-sm
-                        border
-                        break-words
-                        ${isMine
-                          ? "bg-[#d9fdd3] border-green-200 rounded-br-sm"
-                          : "bg-white border-gray-200 rounded-bl-sm"
-                        }
-                      `}
+                      key={index}
+                      className={`flex ${isMine ? "justify-end" : "justify-start"}`}
                     >
-                      <p className="text-sm text-gray-800 pr-14">
-                        {msg.text}
-                      </p>
+                      <div
+                        className={`
+                relative
+                max-w-[90%]
+                sm:max-w-[80%]
+                lg:max-w-[70%]
+                px-3
+                py-2
+                rounded-lg
+                shadow-sm
+                border
+                break-words
+                ${isMine
+                            ? "bg-[#d9fdd3] border-green-200 rounded-br-sm"
+                            : "bg-white border-gray-200 rounded-bl-sm"
+                          }
+              `}
+                      >
+                        <p className="text-sm text-gray-800 pr-14">
+                          {msg.text}
+                        </p>
 
-                      <span className="absolute bottom-1 right-2 text-[10px] text-gray-500">
-                        {new Date(
-                          msg.createdAt || Date.now()
-                        ).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </span>
+                        <span className="absolute bottom-1 right-2 text-[10px] text-gray-500">
+                          {new Date(
+                            msg.createdAt || Date.now()
+                          ).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                );
-              })
+                  );
+                })}
+
+                <div ref={messagesEndRef}></div>
+              </>
             ) : (
               <div className="h-full flex items-center justify-center text-gray-400 text-center px-5">
                 Start a conversation
@@ -287,7 +298,7 @@ const Home_page = () => {
         </div>
 
         {/* Desktop Profile Panel */}
-        <div className="hidden 2xl:flex w-[22%] min-w-[280px] border-l border-white/10 bg-black/20 flex-col items-center p-6">
+        <div className="hidden md:flex w-[22%] min-w-[280px] border-l border-white/10 bg-black/20 flex-col items-center p-6">
 
           {user ? (
             <div className="text-center">

@@ -1,8 +1,22 @@
 @import "tailwindcss";
-@theme  {
+
+@theme {
     --breakpoint-*: initial;
     --breakpoint-sm: 350px;
     --breakpoint-md: 700px;
     --breakpoint-lg: 1000px;
     --breakpoint-xl: 1400px;
+
+}
+
+
+.hide-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+
+.hide-scrollbar {
+    -ms-overflow-style: none;
+    /* Internet Explorer and Edge */
+    scrollbar-width: none;
+    /* Firefox */
 }
