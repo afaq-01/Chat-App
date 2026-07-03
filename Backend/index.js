@@ -25,18 +25,6 @@ app.use(
 
 app.use(express.json());
 
-app.use(
-  cors({
-    origin: [
-      "http://localhost:5173",
-      "http://localhost:5174",
-      "https://chat-app-khaki-six-22.vercel.app"
-    ],
-    credentials: true,
-  })
-);
-
-
 
 /* ---------------------------- Database ----------------------------- */
 
