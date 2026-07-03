@@ -67,7 +67,7 @@ function App() {
 
   useEffect(() => {
     saving_new_users();
-  }, [user])
+  }, [user,isLoaded])
 
   useEffect(() => {
     Getting_All_Users();
