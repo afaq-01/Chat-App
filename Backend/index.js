@@ -10,8 +10,7 @@ import Messages_Model from "./Models/Messages_Models.js";
 const app = express();
 
 /* ---------------------------- Middleware ---------------------------- */
-<<<<<<< HEAD
-=======
+
 
 app.use(
   cors({
@@ -23,7 +22,7 @@ app.use(
     credentials: true
   })
 );
->>>>>>> eac2750 (Fix previous chat loading issue)
+
 app.use(express.json());
 
 app.use(
