@@ -55,40 +55,46 @@ const Home_page = () => {
       return;
     }
 
-    let fileUrl = null;
-
-    // Upload file if selected
-    if (selectedFile) {
-      const formData = new FormData();
-      formData.append("file", selectedFile);
-
-      const uploadRes = await axios.post(
-        "https://brilliant-mindfulness-production-4965.up.railway.app/api/upload",
-        formData,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-        }
-      );
-
-      fileUrl = uploadRes.data.url;
-      setSelectedFile(null)
+    if (!selectedChat) {
+      alert("Please select a chat first");
+      return;
     }
 
-    if (!message.trim() && !fileUrl) return;
+    let fileUrl = null;
+    let fileName = null;
 
-    socket.emit("send-message", {
-      senderId: user.id,
-      receiverId: selectedChat.clerkId,
-      text: message,
-      file: fileUrl,
-      fileName: selectedFile?.name,
-      senderName: user.firstName,
-    });
+    try {
+      if (selectedFile) {
+        const formData = new FormData();
+        formData.append("file", selectedFile);
 
-    setMessage("");
-    setSelectedFile(null);
+        const uploadRes = await axios.post(
+          "https://brilliant-mindfulness-production-4965.up.railway.app/api/upload",
+          formData,
+          { headers: { "Content-Type": "multipart/form-data" } }
+        );
+
+        fileUrl = uploadRes.data.url;
+        fileName = uploadRes.data.fileName;
+      }
+
+      if (!message.trim() && !fileUrl) return;
+
+      socket.emit("send-message", {
+        senderId: user.id,
+        receiverId: selectedChat.clerkId,
+        text: message,
+        file: fileUrl,
+        fileName,
+        senderName: user.firstName,
+      });
+
+      setMessage("");
+      setSelectedFile(null);
+    } catch (error) {
+      console.error("Send message failed:", error);
+      alert("Failed to send message. Please try again.");
+    }
   };
 
   useEffect(() => {
