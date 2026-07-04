@@ -111,34 +111,23 @@ io.on("connection", (socket) => {
     */
   socket.on("send-message", async (data) => {
     try {
-      const {
-        senderId,
-        receiverId,
-        text,
-        senderName,
-      } = data;
+      const { senderId, receiverId, text, file, fileName, senderName } = data;
 
-      // Save message in database
-      const savedMessage = await Messages_Model({
+      const savedMessage = await Messages_Model.create({
         senderId,
         receiverId,
         text,
+        file,
+        fileName,
         senderName,
-        createdAt: new Date(),
       });
-      savedMessage.save()
 
       const receiverSocketId = onlineUsers.get(receiverId);
 
-      // Send message back to sender
       socket.emit("receive-message", savedMessage);
 
-      // Send message to receiver if online
       if (receiverSocketId) {
-        io.to(receiverSocketId).emit(
-          "receive-message",
-          savedMessage
-        );
+        io.to(receiverSocketId).emit("receive-message", savedMessage);
       }
     } catch (error) {
       console.error("Error sending message:", error);
@@ -163,10 +152,6 @@ io.on("connection", (socket) => {
 });
 
 /* --------------------------- Start Server -------------------------- */
-
-app.get('/test',(req,res)=>{
-  res.send('i come from backend ')
-})
 
 const PORT = 5000;
 

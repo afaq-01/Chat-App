@@ -97,7 +97,6 @@ export const Get_Conversation_Messages = async (req, res) => {
 
 export const file_handler = async (req, res) => {
     try {
-        console.log("req.file =", req.file);
         const image = req.file;
 
         if (!image) {
@@ -107,27 +106,21 @@ export const file_handler = async (req, res) => {
             });
         }
 
-        const result = await cloudinary.uploader.upload(
-            image.path,
-            {
-                folder: "uploads"
-            }
-        );
+        const result = await cloudinary.uploader.upload(image.path, {
+            folder: "uploads"
+        });
 
-
-        const secure_url = result.secure_url
-        console.log(secure_url)
-
-
+        return res.status(200).json({
+            success: true,
+            url: result.secure_url,
+            fileName: image.originalname,
+        });
 
     } catch (error) {
         console.log(error);
-
         return res.status(500).json({
             success: false,
             message: error.message,
-            stack: error.stack
         });
     }
 };
-
