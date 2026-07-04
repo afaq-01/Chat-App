@@ -14,6 +14,8 @@ const Home_page = () => {
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState([]);
   const [showProfile, setShowProfile] = useState(false);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
 
   const loadConversation = async (chatUser) => {
@@ -47,22 +49,46 @@ const Home_page = () => {
     };
   }, [socket]);
 
-  const sendMessage = () => {
+  const sendMessage = async () => {
     if (!user) {
       alert("Please Login");
       return;
     }
 
-    if (!message.trim() || !selectedChat) return;
+    let fileUrl = null;
+
+    // Upload file if selected
+    if (selectedFile) {
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+
+      const uploadRes = await axios.post(
+        "http://localhost:5000/api/upload",
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
+
+      fileUrl = uploadRes.data.url;
+      setSelectedFile(null)
+    }
+
+    if (!message.trim() && !fileUrl) return;
 
     socket.emit("send-message", {
       senderId: user.id,
       receiverId: selectedChat.clerkId,
       text: message,
+      file: fileUrl,
+      fileName: selectedFile?.name,
       senderName: user.firstName,
     });
 
     setMessage("");
+    setSelectedFile(null);
   };
 
   useEffect(() => {
@@ -110,9 +136,6 @@ const Home_page = () => {
               </button>
             }
           </div>
-
-          {/* Mobile Profile Button */}
-
 
           {/* Search */}
           <div className="p-3">
@@ -200,8 +223,6 @@ const Home_page = () => {
 
             <div className="flex gap-2 shrink-0">
 
-
-
               <button className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white/10 hover:bg-white/20 transition">
                 📞
               </button>
@@ -218,7 +239,6 @@ const Home_page = () => {
               <>
                 {messages.map((msg, index) => {
                   const isMine = msg.senderId === user?.id;
-
                   return (
                     <div
                       key={index}
@@ -242,9 +262,22 @@ const Home_page = () => {
                           }
               `}
                       >
-                        <p className="text-sm text-gray-800 pr-14">
-                          {msg.text}
-                        </p>
+                        {msg.text && (
+                          <p className="text-sm text-gray-800 pr-14">
+                            {msg.text}
+                          </p>
+                        )}
+
+                        {msg.file && (
+                          <a
+                            href={msg.file}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block text-blue-500 underline mt-2"
+                          >
+                            {msg.fileName || "Download file"}
+                          </a>
+                        )}
 
                         <span className="absolute bottom-1 right-2 text-[10px] text-gray-500">
                           {new Date(
@@ -273,7 +306,26 @@ const Home_page = () => {
             <div className="flex items-center gap-2 bg-white/10 rounded-2xl px-3 py-2">
 
               <button className="text-lg">😊</button>
-              <button className="text-lg">📎</button>
+              <button
+                className="text-lg"
+                onClick={() => fileInputRef.current.click()}
+              >
+                📎
+              </button>
+
+              <input
+                type="file"
+                ref={fileInputRef}
+                className="hidden"
+                onChange={(e) => setSelectedFile(e.target.files[0])}
+              />
+
+              {selectedFile && (
+                <div className="px-2 py-1 bg-white/10 rounded-lg text-xs whitespace-nowrap">
+                  <img src={URL.createObjectURL(selectedFile)} alt="image" className="h-[40px] w-[40px]" />
+
+                </div>
+              )}
 
               <input
                 value={message}

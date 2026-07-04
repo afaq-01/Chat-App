@@ -1,12 +1,13 @@
 import User_Models from "../Models/User_Model.js";
 import Messages_Model from "../Models/Messages_Models.js";
+import cloudinary from "../config/cloudinary.js";
 
 /*-----Controllar for  Adding a new user in  a database------*/
 export const Adding_New_User = async (req, res) => {
     try {
         const { clerkId, name, email, image } = req.body;
 
-        console.log({userName:name})
+        console.log({ userName: name })
         console.log(name)
 
 
@@ -90,6 +91,42 @@ export const Get_Conversation_Messages = async (req, res) => {
         console.log(error);
         res.status(500).json({
             message: "Server Error"
+        });
+    }
+};
+
+export const file_handler = async (req, res) => {
+    try {
+        console.log("req.file =", req.file);
+        const image = req.file;
+
+        if (!image) {
+            return res.status(400).json({
+                success: false,
+                message: "No file uploaded"
+            });
+        }
+
+        const result = await cloudinary.uploader.upload(
+            image.path,
+            {
+                folder: "uploads"
+            }
+        );
+
+
+        const secure_url = result.secure_url
+        console.log(secure_url)
+
+
+
+    } catch (error) {
+        console.log(error);
+
+        return res.status(500).json({
+            success: false,
+            message: error.message,
+            stack: error.stack
         });
     }
 };
