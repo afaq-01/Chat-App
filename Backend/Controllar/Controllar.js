@@ -1,6 +1,6 @@
 import User_Models from "../Models/User_Model.js";
 import Messages_Model from "../Models/Messages_Models.js";
-import cloudinary from "../config/cloudinary.js";
+import cloudinary from "../Config/cloudinary.js";
 
 /*-----Controllar for  Adding a new user in  a database------*/
 export const Adding_New_User = async (req, res) => {
