@@ -129,6 +129,20 @@ io.on("connection", (socket) => {
       if (receiverSocketId) {
         io.to(receiverSocketId).emit("receive-message", savedMessage);
       }
+
+      socket.on("typing", ({ senderId, receiverId }) => {
+        const receiverSocketId = onlineUsers.get(receiverId);
+        if (receiverSocketId) {
+          io.to(receiverSocketId).emit("user-typing", { senderId });
+        }
+      });
+
+      socket.on("stop-typing", ({ senderId, receiverId }) => {
+        const receiverSocketId = onlineUsers.get(receiverId);
+        if (receiverSocketId) {
+          io.to(receiverSocketId).emit("user-stop-typing", { senderId });
+        }
+      });
     } catch (error) {
       console.error("Error sending message:", error);
     }

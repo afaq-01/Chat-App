@@ -15,6 +15,8 @@ const Home_page = () => {
   const [messages, setMessages] = useState([]);
   const [showProfile, setShowProfile] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [isTyping, setIsTyping] = useState(false);
+  const typingTimeoutRef = useRef(null);
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
 
@@ -95,6 +97,11 @@ const Home_page = () => {
       console.error("Send message failed:", error);
       alert("Failed to send message. Please try again.");
     }
+  };
+
+  const isImageFile = (url) => {
+    if (!url) return false;
+    return /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(url);
   };
 
   useEffect(() => {
@@ -275,15 +282,26 @@ const Home_page = () => {
                         )}
 
                         {msg.file && (
-                          <a
-                            href={msg.file}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="block text-blue-500 underline mt-2"
-                          >
-                            {msg.fileName || "Download file"}
-                          </a>
+                          isImageFile(msg.file) ? (
+                            <a href={msg.file} target="_blank" rel="noopener noreferrer">
+                              <img
+                                src={msg.file}
+                                alt={msg.fileName || "image"}
+                                className="max-w-[190px] max-h-[190px] rounded-lg mt-2 object-cover cursor-pointer"
+                              />
+                            </a>
+                          ) : (
+
+                            <a href={msg.file}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="block text-blue-500 underline mt-2"
+                            >
+                              {msg.fileName || "Download file"}
+                            </a>
+                          )
                         )}
+
 
                         <span className="absolute bottom-1 right-2 text-[10px] text-gray-500">
                           {new Date(
