@@ -63,7 +63,7 @@ const Home_page = () => {
       formData.append("file", selectedFile);
 
       const uploadRes = await axios.post(
-        "http://localhost:5000/api/upload",
+        "https://brilliant-mindfulness-production-4965.up.railway.app/api/upload",
         formData,
         {
           headers: {
