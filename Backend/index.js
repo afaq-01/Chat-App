@@ -140,7 +140,10 @@ io.on("connection", (socket) => {
   */
 
   socket.on("typing", ({ senderId, receiverId }) => {
+    console.log("SERVER got typing:", senderId, "->", receiverId);
     const receiverSocketId = onlineUsers.get(receiverId);
+    console.log("SERVER receiver socket:", receiverSocketId);
+
     if (receiverSocketId) {
       io.to(receiverSocketId).emit("user-typing", { senderId });
     }
