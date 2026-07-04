@@ -103,12 +103,8 @@ io.on("connection", (socket) => {
   console.log("Current Online Users:");
   console.log(Array.from(onlineUsers.entries()));
 
-  /* -------------------- Temporary Group Chat -------------------- */
-  /*
-    Current behavior:
-    If one user sends a message,
-    every connected user receives it.
-    */
+  /* -------------------- Send Message -------------------- */
+
   socket.on("send-message", async (data) => {
     try {
       const { senderId, receiverId, text, file, fileName, senderName } = data;
@@ -124,27 +120,36 @@ io.on("connection", (socket) => {
 
       const receiverSocketId = onlineUsers.get(receiverId);
 
+      // Send message back to sender
       socket.emit("receive-message", savedMessage);
 
+      // Send message to receiver if online
       if (receiverSocketId) {
         io.to(receiverSocketId).emit("receive-message", savedMessage);
       }
-
-      socket.on("typing", ({ senderId, receiverId }) => {
-        const receiverSocketId = onlineUsers.get(receiverId);
-        if (receiverSocketId) {
-          io.to(receiverSocketId).emit("user-typing", { senderId });
-        }
-      });
-
-      socket.on("stop-typing", ({ senderId, receiverId }) => {
-        const receiverSocketId = onlineUsers.get(receiverId);
-        if (receiverSocketId) {
-          io.to(receiverSocketId).emit("user-stop-typing", { senderId });
-        }
-      });
     } catch (error) {
       console.error("Error sending message:", error);
+    }
+  });
+
+  /* -------------------- Typing Indicators -------------------- */
+  /*
+    These must live at the top level of the connection handler,
+    NOT nested inside send-message — otherwise they only get
+    registered after a message has already been sent.
+  */
+
+  socket.on("typing", ({ senderId, receiverId }) => {
+    const receiverSocketId = onlineUsers.get(receiverId);
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit("user-typing", { senderId });
+    }
+  });
+
+  socket.on("stop-typing", ({ senderId, receiverId }) => {
+    const receiverSocketId = onlineUsers.get(receiverId);
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit("user-stop-typing", { senderId });
     }
   });
 
