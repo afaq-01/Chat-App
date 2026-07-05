@@ -19,6 +19,7 @@ const Home_page = () => {
   const [isTyping, setIsTyping] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [openMenuId, setOpenMenuId] = useState(null); // _id of message whose delete menu is open
+  const [onlineUserIds, setOnlineUserIds] = useState([]); // clerkIds currently connected
   const typingTimeoutRef = useRef(null);
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -44,6 +45,61 @@ const Home_page = () => {
     iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
   };
 
+  /* -------------------- Online / Offline Tracking -------------------- */
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleOnlineUsers = (ids) => setOnlineUserIds(ids);
+
+    socket.on("online-users", handleOnlineUsers);
+
+    return () => {
+      socket.off("online-users", handleOnlineUsers);
+    };
+  }, [socket]);
+
+  const isUserOnline = (clerkId) => onlineUserIds.includes(clerkId);
+
+  /* -------------------- Read Receipts (Blue Ticks) -------------------- */
+
+  const markConversationSeen = (otherUserId) => {
+    if (!socket || !user || !otherUserId) return;
+    socket.emit("mark-seen", { viewerId: user.id, chatWithId: otherUserId });
+  };
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleMessagesDelivered = ({ deliveredTo }) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.senderId === user?.id && m.receiverId === deliveredTo && m.status === "sent"
+            ? { ...m, status: "delivered" }
+            : m
+        )
+      );
+    };
+
+    const handleMessagesSeen = ({ seenBy }) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.senderId === user?.id && m.receiverId === seenBy
+            ? { ...m, status: "seen" }
+            : m
+        )
+      );
+    };
+
+    socket.on("messages-delivered", handleMessagesDelivered);
+    socket.on("messages-seen", handleMessagesSeen);
+
+    return () => {
+      socket.off("messages-delivered", handleMessagesDelivered);
+      socket.off("messages-seen", handleMessagesSeen);
+    };
+  }, [socket, user]);
+
   const loadConversation = async (chatUser) => {
     try {
       const res = await axios.get(
@@ -61,6 +117,8 @@ const Home_page = () => {
     loadConversation(selectedChat);
     // Reset typing indicator whenever the selected chat changes
     setIsTyping(false);
+    // Tell the other person their messages have now been seen
+    markConversationSeen(selectedChat.clerkId);
   }, [selectedChat, user, isLoaded]);
 
   useEffect(() => {
@@ -68,6 +126,12 @@ const Home_page = () => {
 
     const handleMessage = (msg) => {
       setMessages((prev) => [...prev, msg]);
+
+      // If we're currently looking at the sender's chat, mark it seen
+      // right away instead of waiting for the next chat switch.
+      if (selectedChat && msg.senderId === selectedChat.clerkId && msg.receiverId === user?.id) {
+        markConversationSeen(msg.senderId);
+      }
     };
 
     socket.on("receive-message", handleMessage);
@@ -75,7 +139,7 @@ const Home_page = () => {
     return () => {
       socket.off("receive-message", handleMessage);
     };
-  }, [socket]);
+  }, [socket, selectedChat, user]);
 
   /* -------------------- Typing Indicator (receive side) -------------------- */
   /*
@@ -547,6 +611,16 @@ const Home_page = () => {
     return /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(url);
   };
 
+  const renderTicks = (status) => {
+    if (status === "seen") {
+      return <span className="text-blue-500">✓✓</span>;
+    }
+    if (status === "delivered") {
+      return <span className="text-gray-400">✓✓</span>;
+    }
+    return <span className="text-gray-400">✓</span>;
+  };
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({
       behavior: "smooth",
@@ -622,7 +696,7 @@ const Home_page = () => {
                 </div>
 
                 <span
-                  className={`w-2 h-2 rounded-full shrink-0 ${u.online
+                  className={`w-2 h-2 rounded-full shrink-0 ${isUserOnline(u.clerkId)
                     ? "bg-green-500 animate-pulse"
                     : "bg-gray-500"
                     }`}
@@ -666,8 +740,8 @@ const Home_page = () => {
                     {selectedChat.name}
                   </h1>
 
-                  <p className={`text-xs ${isTyping ? "text-blue-400" : "text-green-400"}`}>
-                    {isTyping ? "typing..." : "Active now"}
+                  <p className={`text-xs ${isTyping ? "text-blue-400" : isUserOnline(selectedChat.clerkId) ? "text-green-400" : "text-gray-500"}`}>
+                    {isTyping ? "typing..." : isUserOnline(selectedChat.clerkId) ? "Active now" : "Offline"}
                   </p>
                 </div>
               </div>
@@ -798,13 +872,14 @@ const Home_page = () => {
                           </>
                         )}
 
-                        <span className="absolute bottom-1 right-2 text-[10px] text-gray-500">
+                        <span className="absolute bottom-1 right-2 text-[10px] text-gray-500 flex items-center gap-1">
                           {new Date(
                             msg.createdAt || Date.now()
                           ).toLocaleTimeString([], {
                             hour: "2-digit",
                             minute: "2-digit",
                           })}
+                          {isMine && !msg.isDeletedForEveryone && renderTicks(msg.status)}
                         </span>
                       </div>
                     </div>

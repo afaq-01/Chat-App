@@ -85,7 +85,7 @@ const activeCalls = new Map();
 
 /* ---------------------- Socket Connection -------------------------- */
 
-io.on("connection", (socket) => {
+io.on("connection", async (socket) => {
   /*
     When the frontend connects:
 
@@ -109,6 +109,43 @@ io.on("connection", (socket) => {
 
   if (clerkId) {
     onlineUsers.set(clerkId, socket.id);
+
+    // Let everyone know the current online list, so sidebars and
+    // chat headers can show live online/offline status.
+    io.emit("online-users", Array.from(onlineUsers.keys()));
+
+    // Any messages sent to this user while they were offline are now
+    // "delivered" (their app just received them). Update those
+    // messages and tell each sender in real time so their tick
+    // switches from single-grey to double-grey.
+    try {
+      const undeliveredMessages = await Messages_Model.find({
+        receiverId: clerkId,
+        status: "sent",
+      });
+
+      if (undeliveredMessages.length > 0) {
+        await Messages_Model.updateMany(
+          { receiverId: clerkId, status: "sent" },
+          { $set: { status: "delivered" } }
+        );
+
+        const affectedSenderIds = [
+          ...new Set(undeliveredMessages.map((m) => m.senderId)),
+        ];
+
+        affectedSenderIds.forEach((senderId) => {
+          const senderSocketId = onlineUsers.get(senderId);
+          if (senderSocketId) {
+            io.to(senderSocketId).emit("messages-delivered", {
+              deliveredTo: clerkId,
+            });
+          }
+        });
+      }
+    } catch (error) {
+      console.error("Error marking offline messages as delivered:", error);
+    }
   }
 
   console.log("Current Online Users:");
@@ -120,6 +157,8 @@ io.on("connection", (socket) => {
     try {
       const { senderId, receiverId, text, file, fileName, senderName } = data;
 
+      const receiverSocketId = onlineUsers.get(receiverId);
+
       const savedMessage = await Messages_Model.create({
         senderId,
         receiverId,
@@ -127,9 +166,10 @@ io.on("connection", (socket) => {
         file,
         fileName,
         senderName,
+        // If the receiver is online right now, their app receives it
+        // immediately, so it's already "delivered" rather than just "sent".
+        status: receiverSocketId ? "delivered" : "sent",
       });
-
-      const receiverSocketId = onlineUsers.get(receiverId);
 
       // Send message back to sender
       socket.emit("receive-message", savedMessage);
@@ -244,6 +284,36 @@ io.on("connection", (socket) => {
     }
   });
 
+  /* -------------------- Read Receipts (Blue Ticks) -------------------- */
+  /*
+    Called by a client whenever it opens (or is actively viewing) a
+    conversation. Marks every not-yet-seen message from that other
+    person as "seen", then tells the original sender in real time so
+    their double-grey ticks turn double-blue.
+  */
+
+  socket.on("mark-seen", async ({ viewerId, chatWithId }) => {
+    try {
+      const result = await Messages_Model.updateMany(
+        {
+          senderId: chatWithId,
+          receiverId: viewerId,
+          status: { $ne: "seen" },
+        },
+        { $set: { status: "seen" } }
+      );
+
+      if (result.modifiedCount > 0) {
+        const senderSocketId = onlineUsers.get(chatWithId);
+        if (senderSocketId) {
+          io.to(senderSocketId).emit("messages-seen", { seenBy: viewerId });
+        }
+      }
+    } catch (error) {
+      console.error("Error marking messages as seen:", error);
+    }
+  });
+
   /* -------------------- Delete Message -------------------- */
   /*
     Two independent flows, like WhatsApp:
@@ -324,6 +394,9 @@ io.on("connection", (socket) => {
     */
 
     onlineUsers.delete(clerkId);
+
+    // Let everyone know this user just went offline
+    io.emit("online-users", Array.from(onlineUsers.keys()));
 
     console.log("Current Online Users:");
     console.log(Array.from(onlineUsers.entries()));

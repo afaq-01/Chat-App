@@ -22,6 +22,16 @@ const messageSchema = new mongoose.Schema(
             type: [String],
             default: [],
         },
+
+        // Drives the WhatsApp-style tick icons:
+        //   "sent"      -> single grey tick   (saved, receiver offline)
+        //   "delivered" -> double grey tick   (receiver's app got it)
+        //   "seen"      -> double blue tick   (receiver opened this chat)
+        status: {
+            type: String,
+            enum: ["sent", "delivered", "seen"],
+            default: "sent",
+        },
     },
     {
         timestamps: true,
