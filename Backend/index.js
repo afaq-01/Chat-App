@@ -137,6 +137,13 @@ io.on("connection", (socket) => {
     These must live at the top level of the connection handler,
     NOT nested inside send-message — otherwise they only get
     registered after a message has already been sent.
+
+    EVENT-NAME CONTRACT (must match the frontend exactly):
+      client -> server : "typing"        -> server -> client : "user-typing"
+      client -> server : "stop-typing"    -> server -> client : "user-stop-typing"
+
+    The frontend's Home_page.jsx emits "typing" / "stop-typing" and
+    listens for "user-typing" / "user-stop-typing" to match this.
   */
 
   socket.on("typing", ({ senderId, receiverId }) => {

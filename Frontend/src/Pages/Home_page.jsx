@@ -35,6 +35,8 @@ const Home_page = () => {
   useEffect(() => {
     if (!selectedChat || !isLoaded || !user) return;
     loadConversation(selectedChat);
+    // Reset typing indicator whenever the selected chat changes
+    setIsTyping(false);
   }, [selectedChat, user, isLoaded]);
 
   useEffect(() => {
@@ -50,6 +52,67 @@ const Home_page = () => {
       socket.off("receive-message", handleMessage);
     };
   }, [socket]);
+
+  /* -------------------- Typing Indicator (receive side) -------------------- */
+  /*
+    Server emits "user-typing" / "user-stop-typing" (see index.js),
+    so we must listen for those exact event names here.
+  */
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleTypingStart = ({ senderId }) => {
+      if (selectedChat && senderId === selectedChat.clerkId) {
+        setIsTyping(true);
+      }
+    };
+
+    const handleTypingStop = ({ senderId }) => {
+      if (selectedChat && senderId === selectedChat.clerkId) {
+        setIsTyping(false);
+      }
+    };
+
+    socket.on("user-typing", handleTypingStart);
+    socket.on("user-stop-typing", handleTypingStop);
+
+    return () => {
+      socket.off("user-typing", handleTypingStart);
+      socket.off("user-stop-typing", handleTypingStop);
+    };
+  }, [socket, selectedChat]);
+
+  /* -------------------- Typing Indicator (emit side) -------------------- */
+  /*
+    Server listens for "typing" / "stop-typing", so we emit those
+    exact event names when the local user types.
+  */
+  const handleTyping = (e) => {
+    setMessage(e.target.value);
+
+    if (!socket || !user || !selectedChat) return;
+
+    socket.emit("typing", {
+      senderId: user.id,
+      receiverId: selectedChat.clerkId,
+    });
+
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+
+    typingTimeoutRef.current = setTimeout(() => {
+      socket.emit("stop-typing", {
+        senderId: user.id,
+        receiverId: selectedChat.clerkId,
+      });
+    }, 1500);
+  };
+
+  useEffect(() => {
+    // Clean up any pending typing timeout on unmount
+    return () => {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    };
+  }, []);
 
   const sendMessage = async () => {
     if (!user) {
@@ -89,6 +152,13 @@ const Home_page = () => {
         file: fileUrl,
         fileName,
         senderName: user.firstName,
+      });
+
+      // Stop the typing indicator immediately once the message is sent
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      socket.emit("stop-typing", {
+        senderId: user.id,
+        receiverId: selectedChat.clerkId,
       });
 
       setMessage("");
@@ -223,8 +293,8 @@ const Home_page = () => {
                     {selectedChat.name}
                   </h1>
 
-                  <p className="text-xs text-green-400">
-                    Active now
+                  <p className={`text-xs ${isTyping ? "text-blue-400" : "text-green-400"}`}>
+                    {isTyping ? "typing..." : "Active now"}
                   </p>
                 </div>
               </div>
@@ -316,6 +386,18 @@ const Home_page = () => {
                   );
                 })}
 
+                {isTyping && (
+                  <div className="flex justify-start">
+                    <div className="bg-white border border-gray-200 rounded-lg rounded-bl-sm px-3 py-2 shadow-sm">
+                      <div className="flex gap-1 items-center">
+                        <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                        <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                        <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div ref={messagesEndRef}></div>
               </>
             ) : (
@@ -353,7 +435,7 @@ const Home_page = () => {
 
               <input
                 value={message}
-                onChange={(e) => setMessage(e.target.value)}
+                onChange={handleTyping}
                 placeholder="Type a message..."
                 className="flex-1 min-w-0 bg-transparent outline-none text-sm sm:text-base"
                 onKeyDown={(e) => {
