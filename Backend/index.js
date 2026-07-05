@@ -72,6 +72,17 @@ Example:
 
 const onlineUsers = new Map();
 
+/* ---------------------- Active Calls Storage ------------------------ */
+/*
+Tracks which clerkId is currently calling/in-call-with which other
+clerkId, so that if either side disconnects mid-call we can notify
+the other side to hang up cleanly.
+
+Map structure: clerkId => partnerClerkId (set in both directions)
+*/
+
+const activeCalls = new Map();
+
 /* ---------------------- Socket Connection -------------------------- */
 
 io.on("connection", (socket) => {
@@ -163,10 +174,91 @@ io.on("connection", (socket) => {
     }
   });
 
+  /* -------------------- Audio Call Signaling -------------------- */
+  /*
+    This is pure signaling relay — the server never touches audio
+    itself, it just passes WebRTC handshake messages (offer/answer/
+    ICE candidates) between the two clients so their browsers can
+    negotiate a direct peer-to-peer connection.
+
+    Flow:
+      caller  -> "call-user"    -> server -> callee : "incoming-call"
+      callee  -> "answer-call"  -> server -> caller : "call-accepted"
+      callee  -> "reject-call"  -> server -> caller : "call-rejected"
+      either  -> "ice-candidate"-> server -> other   : "ice-candidate"
+      either  -> "end-call"     -> server -> other   : "call-ended"
+  */
+
+  socket.on("call-user", ({ to, from, offer, callerName, callerImage }) => {
+    const receiverSocketId = onlineUsers.get(to);
+
+    if (!receiverSocketId) {
+      // Callee is offline — tell the caller immediately
+      socket.emit("call-rejected", { from: to, reason: "offline" });
+      return;
+    }
+
+    // Tentatively pair them so a mid-ring disconnect can be cleaned up
+    activeCalls.set(from, to);
+    activeCalls.set(to, from);
+
+    io.to(receiverSocketId).emit("incoming-call", {
+      from,
+      offer,
+      callerName,
+      callerImage,
+    });
+  });
+
+  socket.on("answer-call", ({ to, from, answer }) => {
+    const receiverSocketId = onlineUsers.get(to);
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit("call-accepted", { from, answer });
+    }
+  });
+
+  socket.on("reject-call", ({ to, from, reason }) => {
+    activeCalls.delete(from);
+    activeCalls.delete(to);
+
+    const receiverSocketId = onlineUsers.get(to);
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit("call-rejected", { from, reason });
+    }
+  });
+
+  socket.on("ice-candidate", ({ to, from, candidate }) => {
+    const receiverSocketId = onlineUsers.get(to);
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit("ice-candidate", { from, candidate });
+    }
+  });
+
+  socket.on("end-call", ({ to, from }) => {
+    activeCalls.delete(from);
+    activeCalls.delete(to);
+
+    const receiverSocketId = onlineUsers.get(to);
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit("call-ended", { from });
+    }
+  });
+
   /* ----------------------- Disconnect Event ---------------------- */
 
   socket.on("disconnect", () => {
     console.log(`${clerkId} disconnected`);
+
+    // If this user was mid-call, tell their partner to hang up
+    const partnerId = activeCalls.get(clerkId);
+    if (partnerId) {
+      const partnerSocketId = onlineUsers.get(partnerId);
+      if (partnerSocketId) {
+        io.to(partnerSocketId).emit("call-ended", { from: clerkId });
+      }
+      activeCalls.delete(clerkId);
+      activeCalls.delete(partnerId);
+    }
 
     /*
       Remove user from online list

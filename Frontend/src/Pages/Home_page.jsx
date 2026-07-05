@@ -3,6 +3,7 @@ import Context from "../Components/Context";
 import { useUser, useClerk } from "@clerk/clerk-react";
 import { CgProfile } from "react-icons/cg";
 import axios from "axios";
+import EmojiPicker from "emoji-picker-react";
 
 const Home_page = () => {
   const { For_Search, setSearch, socket } = useContext(Context);
@@ -16,9 +17,31 @@ const Home_page = () => {
   const [showProfile, setShowProfile] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [isTyping, setIsTyping] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const typingTimeoutRef = useRef(null);
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
+  const emojiPickerRef = useRef(null);
+  const emojiButtonRef = useRef(null);
+
+  /* -------------------- Audio Call State -------------------- */
+  // callState: "idle" | "calling" (outgoing, waiting for answer)
+  //          | "ringing" (incoming, waiting for user action) | "connected"
+  const [callState, setCallState] = useState("idle");
+  const [incomingCall, setIncomingCall] = useState(null); // { from, offer, callerName, callerImage }
+  const [activeCallPartner, setActiveCallPartner] = useState(null); // { clerkId, name, image }
+  const [callDuration, setCallDuration] = useState(0);
+  const [isMuted, setIsMuted] = useState(false);
+
+  const localStreamRef = useRef(null);
+  const peerConnectionRef = useRef(null);
+  const remoteAudioRef = useRef(null);
+  const callTimerRef = useRef(null);
+  const currentCallPartnerRef = useRef(null); // clerkId of the other party, for signaling
+
+  const ICE_SERVERS = {
+    iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+  };
 
   const loadConversation = async (chatUser) => {
     try {
@@ -114,6 +137,268 @@ const Home_page = () => {
     };
   }, []);
 
+  /* -------------------- Audio Call: Peer Connection Setup -------------------- */
+
+  const createPeerConnection = (remoteId) => {
+    const pc = new RTCPeerConnection(ICE_SERVERS);
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        socket.emit("ice-candidate", {
+          candidate: event.candidate,
+          to: remoteId,
+          from: user.id,
+        });
+      }
+    };
+
+    pc.ontrack = (event) => {
+      if (remoteAudioRef.current) {
+        remoteAudioRef.current.srcObject = event.streams[0];
+      }
+    };
+
+    pc.onconnectionstatechange = () => {
+      if (["disconnected", "failed", "closed"].includes(pc.connectionState)) {
+        cleanupCall();
+      }
+    };
+
+    return pc;
+  };
+
+  const cleanupCall = () => {
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((track) => track.stop());
+      localStreamRef.current = null;
+    }
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.srcObject = null;
+    }
+    if (callTimerRef.current) {
+      clearInterval(callTimerRef.current);
+      callTimerRef.current = null;
+    }
+    currentCallPartnerRef.current = null;
+    setIncomingCall(null);
+    setActiveCallPartner(null);
+    setCallState("idle");
+    setCallDuration(0);
+    setIsMuted(false);
+  };
+
+  /* -------------------- Audio Call: Caller Side -------------------- */
+
+  const startCall = async () => {
+    if (!user) {
+      alert("Please Login");
+      return;
+    }
+    if (!selectedChat) {
+      alert("Please select a chat first");
+      return;
+    }
+    if (callState !== "idle") return;
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      localStreamRef.current = stream;
+
+      const pc = createPeerConnection(selectedChat.clerkId);
+      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+      peerConnectionRef.current = pc;
+      currentCallPartnerRef.current = selectedChat.clerkId;
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      socket.emit("call-user", {
+        to: selectedChat.clerkId,
+        from: user.id,
+        offer,
+        callerName: user.firstName,
+        callerImage: user.imageUrl,
+      });
+
+      setActiveCallPartner({
+        clerkId: selectedChat.clerkId,
+        name: selectedChat.name,
+        image: selectedChat.image,
+      });
+      setCallState("calling");
+    } catch (error) {
+      console.error("Failed to start call:", error);
+      alert("Could not access your microphone. Please check permissions.");
+    }
+  };
+
+  /* -------------------- Audio Call: Callee Side -------------------- */
+
+  const acceptCall = async () => {
+    if (!incomingCall) return;
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      localStreamRef.current = stream;
+
+      const pc = createPeerConnection(incomingCall.from);
+      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+      peerConnectionRef.current = pc;
+      currentCallPartnerRef.current = incomingCall.from;
+
+      await pc.setRemoteDescription(new RTCSessionDescription(incomingCall.offer));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+
+      socket.emit("answer-call", {
+        to: incomingCall.from,
+        from: user.id,
+        answer,
+      });
+
+      setActiveCallPartner({
+        clerkId: incomingCall.from,
+        name: incomingCall.callerName,
+        image: incomingCall.callerImage,
+      });
+      setIncomingCall(null);
+      setCallState("connected");
+    } catch (error) {
+      console.error("Failed to accept call:", error);
+      alert("Could not access your microphone. Please check permissions.");
+      rejectCall();
+    }
+  };
+
+  const rejectCall = () => {
+    if (incomingCall) {
+      socket.emit("reject-call", { to: incomingCall.from, from: user.id });
+    }
+    setIncomingCall(null);
+    setCallState("idle");
+  };
+
+  /* -------------------- Audio Call: Shared Controls -------------------- */
+
+  const endCall = () => {
+    const partnerId =
+      currentCallPartnerRef.current || incomingCall?.from || activeCallPartner?.clerkId;
+
+    if (partnerId) {
+      socket.emit("end-call", { to: partnerId, from: user.id });
+    }
+    cleanupCall();
+  };
+
+  const toggleMute = () => {
+    if (!localStreamRef.current) return;
+    localStreamRef.current.getAudioTracks().forEach((track) => {
+      track.enabled = isMuted; // if currently muted, enable; else disable
+    });
+    setIsMuted((prev) => !prev);
+  };
+
+  const formatDuration = (secs) => {
+    const m = Math.floor(secs / 60).toString().padStart(2, "0");
+    const s = (secs % 60).toString().padStart(2, "0");
+    return `${m}:${s}`;
+  };
+
+  /* -------------------- Audio Call: Socket Signaling Listeners -------------------- */
+
+  useEffect(() => {
+    if (!socket || !user) return;
+
+    const handleIncomingCall = ({ from, offer, callerName, callerImage }) => {
+      // Already on a call or on another call screen — auto-decline
+      if (callState !== "idle") {
+        socket.emit("reject-call", { to: from, from: user.id, reason: "busy" });
+        return;
+      }
+      setIncomingCall({ from, offer, callerName, callerImage });
+      setCallState("ringing");
+    };
+
+    const handleCallAccepted = async ({ answer }) => {
+      const pc = peerConnectionRef.current;
+      if (!pc) return;
+      try {
+        await pc.setRemoteDescription(new RTCSessionDescription(answer));
+        setCallState("connected");
+      } catch (error) {
+        console.error("Failed to set remote description:", error);
+      }
+    };
+
+    const handleCallRejected = ({ reason }) => {
+      cleanupCall();
+      if (reason === "offline") {
+        alert("User is offline");
+      } else if (reason === "busy") {
+        alert("User is busy on another call");
+      } else {
+        alert("Call was declined");
+      }
+    };
+
+    const handleIceCandidate = async ({ candidate }) => {
+      const pc = peerConnectionRef.current;
+      if (pc && candidate) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (error) {
+          console.error("Error adding ICE candidate:", error);
+        }
+      }
+    };
+
+    const handleCallEnded = () => {
+      cleanupCall();
+    };
+
+    socket.on("incoming-call", handleIncomingCall);
+    socket.on("call-accepted", handleCallAccepted);
+    socket.on("call-rejected", handleCallRejected);
+    socket.on("ice-candidate", handleIceCandidate);
+    socket.on("call-ended", handleCallEnded);
+
+    return () => {
+      socket.off("incoming-call", handleIncomingCall);
+      socket.off("call-accepted", handleCallAccepted);
+      socket.off("call-rejected", handleCallRejected);
+      socket.off("ice-candidate", handleIceCandidate);
+      socket.off("call-ended", handleCallEnded);
+    };
+  }, [socket, user, callState, incomingCall]);
+
+  /* -------------------- Audio Call: Duration Timer -------------------- */
+
+  useEffect(() => {
+    if (callState === "connected") {
+      callTimerRef.current = setInterval(() => {
+        setCallDuration((prev) => prev + 1);
+      }, 1000);
+    }
+    return () => {
+      if (callTimerRef.current) clearInterval(callTimerRef.current);
+    };
+  }, [callState]);
+
+  /* -------------------- Audio Call: Cleanup on Unmount -------------------- */
+
+  useEffect(() => {
+    return () => {
+      if (peerConnectionRef.current) peerConnectionRef.current.close();
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, []);
+
   const sendMessage = async () => {
     if (!user) {
       alert("Please Login");
@@ -167,6 +452,30 @@ const Home_page = () => {
       console.error("Send message failed:", error);
       alert("Failed to send message. Please try again.");
     }
+  };
+
+  /* -------------------- Emoji Picker -------------------- */
+
+  useEffect(() => {
+    if (!showEmojiPicker) return;
+
+    const handleClickOutside = (e) => {
+      if (
+        emojiPickerRef.current &&
+        !emojiPickerRef.current.contains(e.target) &&
+        emojiButtonRef.current &&
+        !emojiButtonRef.current.contains(e.target)
+      ) {
+        setShowEmojiPicker(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showEmojiPicker]);
+
+  const handleEmojiClick = (emojiData) => {
+    setMessage((prev) => prev + emojiData.emoji);
   };
 
   const isImageFile = (url) => {
@@ -306,11 +615,19 @@ const Home_page = () => {
 
             <div className="flex gap-2 shrink-0">
 
-              <button className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white/10 hover:bg-white/20 transition">
+              <button
+                onClick={startCall}
+                disabled={callState !== "idle"}
+                className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white/10 hover:bg-white/20 transition disabled:opacity-40 disabled:cursor-not-allowed"
+              >
                 📞
               </button>
 
-              <button className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white/10 hover:bg-white/20 transition">
+              <button
+                disabled
+                title="Video calling coming soon"
+                className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white/10 opacity-40 cursor-not-allowed transition"
+              >
                 🎥
               </button>
             </div>
@@ -408,10 +725,33 @@ const Home_page = () => {
           </div>
 
           {/* Input */}
-          <div className="p-2 sm:p-3 border-t border-white/10 shrink-0">
+          <div className="p-2 sm:p-3 border-t border-white/10 shrink-0 relative">
+
+            {showEmojiPicker && (
+              <div
+                ref={emojiPickerRef}
+                className="absolute bottom-full left-2 mb-2 z-20"
+              >
+                <EmojiPicker
+                  onEmojiClick={handleEmojiClick}
+                  autoFocusSearch={false}
+                  theme="dark"
+                  height={350}
+                  width={300}
+                />
+              </div>
+            )}
+
             <div className="flex items-center gap-2 bg-white/10 rounded-2xl px-3 py-2">
 
-              <button className="text-lg">😊</button>
+              <button
+                ref={emojiButtonRef}
+                type="button"
+                className="text-lg"
+                onClick={() => setShowEmojiPicker((prev) => !prev)}
+              >
+                😊
+              </button>
               <button
                 className="text-lg"
                 onClick={() => fileInputRef.current.click()}
@@ -558,6 +898,116 @@ const Home_page = () => {
               <h1 className="mt-8 text-sm text-gray-400">
                 Build By : Afaq Ahmad Khan
               </h1>
+            </div>
+          </div>
+        )}
+
+        {/* Hidden element that actually plays the remote audio stream */}
+        <audio ref={remoteAudioRef} autoPlay />
+
+        {/* -------------------- Incoming Call (Ringing) -------------------- */}
+        {callState === "ringing" && incomingCall && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center">
+            <div className="w-[90%] max-w-sm bg-[#111827] border border-white/10 rounded-3xl p-8 text-center">
+              <img
+                src={incomingCall.callerImage}
+                alt={incomingCall.callerName}
+                className="w-24 h-24 rounded-full object-cover mx-auto animate-pulse"
+              />
+
+              <h2 className="mt-4 text-lg font-semibold">
+                {incomingCall.callerName}
+              </h2>
+
+              <p className="text-sm text-gray-400 mt-1">Incoming call...</p>
+
+              <div className="flex justify-center gap-6 mt-8">
+                <button
+                  onClick={rejectCall}
+                  className="w-14 h-14 rounded-full bg-red-500 hover:bg-red-600 transition flex items-center justify-center text-2xl"
+                  title="Decline"
+                >
+                  ✕
+                </button>
+
+                <button
+                  onClick={acceptCall}
+                  className="w-14 h-14 rounded-full bg-green-500 hover:bg-green-600 transition flex items-center justify-center text-2xl"
+                  title="Accept"
+                >
+                  📞
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* -------------------- Outgoing Call (Calling...) -------------------- */}
+        {callState === "calling" && activeCallPartner && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center">
+            <div className="w-[90%] max-w-sm bg-[#111827] border border-white/10 rounded-3xl p-8 text-center">
+              <img
+                src={activeCallPartner.image}
+                alt={activeCallPartner.name}
+                className="w-24 h-24 rounded-full object-cover mx-auto animate-pulse"
+              />
+
+              <h2 className="mt-4 text-lg font-semibold">
+                {activeCallPartner.name}
+              </h2>
+
+              <p className="text-sm text-gray-400 mt-1">Calling...</p>
+
+              <div className="flex justify-center mt-8">
+                <button
+                  onClick={endCall}
+                  className="w-14 h-14 rounded-full bg-red-500 hover:bg-red-600 transition flex items-center justify-center text-2xl"
+                  title="Cancel"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* -------------------- Connected Call -------------------- */}
+        {callState === "connected" && activeCallPartner && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center">
+            <div className="w-[90%] max-w-sm bg-[#111827] border border-white/10 rounded-3xl p-8 text-center">
+              <img
+                src={activeCallPartner.image}
+                alt={activeCallPartner.name}
+                className="w-24 h-24 rounded-full object-cover mx-auto"
+              />
+
+              <h2 className="mt-4 text-lg font-semibold">
+                {activeCallPartner.name}
+              </h2>
+
+              <p className="text-sm text-green-400 mt-1">
+                {formatDuration(callDuration)}
+              </p>
+
+              <div className="flex justify-center gap-6 mt-8">
+                <button
+                  onClick={toggleMute}
+                  className={`w-14 h-14 rounded-full transition flex items-center justify-center text-2xl ${
+                    isMuted ? "bg-yellow-500 hover:bg-yellow-600" : "bg-white/10 hover:bg-white/20"
+                  }`}
+                  title={isMuted ? "Unmute" : "Mute"}
+                >
+                  {isMuted ? "🔇" : "🎙️"}
+                </button>
+
+                <button
+                  onClick={endCall}
+                  className="w-14 h-14 rounded-full bg-red-500 hover:bg-red-600 transition flex items-center justify-center text-2xl"
+                  title="End call"
+                >
+                  📴
+                </button>
+              </div>
             </div>
           </div>
         )}
