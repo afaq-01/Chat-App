@@ -739,7 +739,9 @@ const Home_page = () => {
                         {isMenuOpen && (
                           <div
                             data-message-menu
-                            className="absolute top-6 right-1 z-10 bg-white border border-gray-200 rounded-lg shadow-lg text-xs overflow-hidden min-w-[150px]"
+                            className={`absolute top-6 z-10 bg-white border border-gray-200 rounded-lg shadow-lg text-xs overflow-hidden min-w-[150px] ${
+                              isMine ? "right-1" : "left-1"
+                            }`}
                           >
                             <button
                               data-message-menu
