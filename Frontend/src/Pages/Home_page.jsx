@@ -18,6 +18,7 @@ const Home_page = () => {
   const [selectedFile, setSelectedFile] = useState(null);
   const [isTyping, setIsTyping] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [openMenuId, setOpenMenuId] = useState(null); // _id of message whose delete menu is open
   const typingTimeoutRef = useRef(null);
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -454,6 +455,69 @@ const Home_page = () => {
     }
   };
 
+  /* -------------------- Delete Message: Socket Listeners -------------------- */
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleDeletedEveryone = ({ messageId }) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m._id === messageId
+            ? { ...m, isDeletedForEveryone: true, text: "", file: "", fileName: "" }
+            : m
+        )
+      );
+    };
+
+    const handleDeletedMe = ({ messageId }) => {
+      setMessages((prev) => prev.filter((m) => m._id !== messageId));
+    };
+
+    socket.on("message-deleted-everyone", handleDeletedEveryone);
+    socket.on("message-deleted-me", handleDeletedMe);
+
+    return () => {
+      socket.off("message-deleted-everyone", handleDeletedEveryone);
+      socket.off("message-deleted-me", handleDeletedMe);
+    };
+  }, [socket]);
+
+  /* -------------------- Delete Message: Actions -------------------- */
+
+  const deleteForMe = (messageId) => {
+    if (!socket || !user) return;
+    socket.emit("delete-message-me", { messageId, requesterId: user.id });
+    // Optimistic local removal — server confirmation just double-checks
+    setMessages((prev) => prev.filter((m) => m._id !== messageId));
+    setOpenMenuId(null);
+  };
+
+  const deleteForEveryone = (messageId) => {
+    if (!socket || !user || !selectedChat) return;
+    socket.emit("delete-message-everyone", {
+      messageId,
+      requesterId: user.id,
+      receiverId: selectedChat.clerkId,
+    });
+    setOpenMenuId(null);
+  };
+
+  /* -------------------- Delete Message: Menu Click-Outside -------------------- */
+
+  useEffect(() => {
+    if (!openMenuId) return;
+
+    const handleClickOutside = (e) => {
+      if (!e.target.closest("[data-message-menu]")) {
+        setOpenMenuId(null);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [openMenuId]);
+
   /* -------------------- Emoji Picker -------------------- */
 
   useEffect(() => {
@@ -637,11 +701,12 @@ const Home_page = () => {
           <div className="flex-1 overflow-y-auto p-2 sm:p-4 space-y-3 min-h-0 hide-scrollbar">
             {selectedChat ? (
               <>
-                {messages.map((msg, index) => {
+                {messages.map((msg) => {
                   const isMine = msg.senderId === user?.id;
+                  const isMenuOpen = openMenuId === msg._id;
                   return (
                     <div
-                      key={index}
+                      key={msg._id}
                       className={`flex ${isMine ? "justify-end" : "justify-start"}`}
                     >
                       <div
@@ -662,33 +727,74 @@ const Home_page = () => {
                           }
               `}
                       >
-                        {msg.text && (
-                          <p className="text-sm text-gray-800 pr-14">
-                            {msg.text}
-                          </p>
-                        )}
+                        {/* Kebab menu trigger */}
+                        <button
+                          data-message-menu
+                          onClick={() => setOpenMenuId(isMenuOpen ? null : msg._id)}
+                          className="absolute top-0.5 right-1 text-gray-500 hover:text-gray-800 text-sm px-1 leading-none"
+                        >
+                          ⋮
+                        </button>
 
-                        {msg.file && (
-                          isImageFile(msg.file) ? (
-                            <a href={msg.file} target="_blank" rel="noopener noreferrer">
-                              <img
-                                src={msg.file}
-                                alt={msg.fileName || "image"}
-                                className="max-w-[190px] max-h-[190px] rounded-lg mt-2 object-cover cursor-pointer"
-                              />
-                            </a>
-                          ) : (
-
-                            <a href={msg.file}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="block text-blue-500 underline mt-2"
+                        {isMenuOpen && (
+                          <div
+                            data-message-menu
+                            className="absolute top-6 right-1 z-10 bg-white border border-gray-200 rounded-lg shadow-lg text-xs overflow-hidden min-w-[150px]"
+                          >
+                            <button
+                              data-message-menu
+                              onClick={() => deleteForMe(msg._id)}
+                              className="block w-full text-left px-3 py-2 text-gray-700 hover:bg-gray-100"
                             >
-                              {msg.fileName || "Download file"}
-                            </a>
-                          )
+                              Delete for me
+                            </button>
+
+                            {isMine && !msg.isDeletedForEveryone && (
+                              <button
+                                data-message-menu
+                                onClick={() => deleteForEveryone(msg._id)}
+                                className="block w-full text-left px-3 py-2 text-red-600 hover:bg-gray-100 border-t border-gray-100"
+                              >
+                                Delete for everyone
+                              </button>
+                            )}
+                          </div>
                         )}
 
+                        {msg.isDeletedForEveryone ? (
+                          <p className="text-sm text-gray-400 italic pr-14">
+                            This message was deleted
+                          </p>
+                        ) : (
+                          <>
+                            {msg.text && (
+                              <p className="text-sm text-gray-800 pr-14">
+                                {msg.text}
+                              </p>
+                            )}
+
+                            {msg.file && (
+                              isImageFile(msg.file) ? (
+                                <a href={msg.file} target="_blank" rel="noopener noreferrer">
+                                  <img
+                                    src={msg.file}
+                                    alt={msg.fileName || "image"}
+                                    className="max-w-[190px] max-h-[190px] rounded-lg mt-2 object-cover cursor-pointer"
+                                  />
+                                </a>
+                              ) : (
+
+                                <a href={msg.file}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="block text-blue-500 underline mt-2"
+                                >
+                                  {msg.fileName || "Download file"}
+                                </a>
+                              )
+                            )}
+                          </>
+                        )}
 
                         <span className="absolute bottom-1 right-2 text-[10px] text-gray-500">
                           {new Date(

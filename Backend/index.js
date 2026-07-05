@@ -244,6 +244,64 @@ io.on("connection", (socket) => {
     }
   });
 
+  /* -------------------- Delete Message -------------------- */
+  /*
+    Two independent flows, like WhatsApp:
+
+    "delete-message-everyone": only the original sender may do this.
+      The message document is kept (for integrity) but its content is
+      wiped and isDeletedForEveryone is set. Both sides are notified in
+      real time so the bubble instantly turns into a placeholder.
+
+    "delete-message-me": purely a per-user visibility flag. The
+      requester's clerkId is added to deletedFor. Nothing is broadcast
+      to the other user — it's only hidden on the requester's own
+      screen (and stays hidden after reload, via the deletedFor filter
+      in Get_Conversation_Messages).
+  */
+
+  socket.on("delete-message-everyone", async ({ messageId, requesterId, receiverId }) => {
+    try {
+      const message = await Messages_Model.findById(messageId);
+      if (!message) return;
+
+      // Only the original sender can delete a message for everyone
+      if (message.senderId !== requesterId) return;
+
+      message.isDeletedForEveryone = true;
+      message.text = "";
+      message.file = "";
+      message.fileName = "";
+      await message.save();
+
+      const payload = { messageId };
+
+      // Notify the requester's own other tabs/devices
+      socket.emit("message-deleted-everyone", payload);
+
+      const receiverSocketId = onlineUsers.get(receiverId);
+      if (receiverSocketId) {
+        io.to(receiverSocketId).emit("message-deleted-everyone", payload);
+      }
+    } catch (error) {
+      console.error("Error deleting message for everyone:", error);
+    }
+  });
+
+  socket.on("delete-message-me", async ({ messageId, requesterId }) => {
+    try {
+      await Messages_Model.findByIdAndUpdate(messageId, {
+        $addToSet: { deletedFor: requesterId },
+      });
+
+      // Confirm back to the requester only — this never affects the
+      // other participant's view of the conversation.
+      socket.emit("message-deleted-me", { messageId });
+    } catch (error) {
+      console.error("Error deleting message for me:", error);
+    }
+  });
+
   /* ----------------------- Disconnect Event ---------------------- */
 
   socket.on("disconnect", () => {

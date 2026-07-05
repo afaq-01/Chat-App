@@ -72,6 +72,10 @@ export const Get_Conversation_Messages = async (req, res) => {
     try {
         const { user1, user2 } = req.params;
 
+        // user1 is always the currently logged-in user requesting the
+        // conversation (see Home_page.jsx), so we exclude any message
+        // they've individually "deleted for me" — the other user (user2)
+        // still sees it fine, since deletedFor is per-user.
         const messages = await Messages_Model.find({
             $or: [
                 {
@@ -82,7 +86,8 @@ export const Get_Conversation_Messages = async (req, res) => {
                     senderId: user2,
                     receiverId: user1,
                 }
-            ]
+            ],
+            deletedFor: { $nin: [user1] },
         }).sort({ createdAt: 1 });
 
         res.status(200).json(messages);
